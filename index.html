@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIMS 13V2 PRO — PORT INTEGRATED MANAGEMENT SYSTEM</title>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary: #0a192f;
+            --accent: #64ffda;
+            --text-main: #e6f1ff;
+            --text-dim: #8892b0;
+            --bg-card: #112240;
+            --border-color: #233554;
+        }
+        body { background: var(--primary); color: var(--text-main); font-family: 'Inter', sans-serif; margin: 0; padding: 20px; }
+        .dashboard { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: 250px 1fr; gap: 20px; }
+        .sidebar { background: var(--bg-card); padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; }
+        .main-content { padding: 0 20px; }
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(2,12,27,0.7); }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: rgba(100, 255, 218, 0.05); border: 1px solid var(--accent); padding: 15px; border-radius: 4px; text-align: center; }
+        .stat-val { font-size: 24px; font-weight: bold; color: var(--accent); }
+        .heatmap-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .heatmap-box { height: 120px; border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; cursor: pointer; transition: 0.3s; }
+        .heatmap-box:hover { background: rgba(100, 255, 218, 0.1); border-color: var(--accent); }
+        .audit-table { width: 100%; border-collapse: collapse; }
+        .audit-table th, .audit-table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border-color); }
+        .btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 10px 20px; cursor: pointer; border-radius: 4px; transition: 0.3s; }
+        .btn:hover { background: rgba(100, 255, 218, 0.1); }
+        .btn-export { background: #2e7d32; color: white; border-color: #2e7d32; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-content { background: var(--bg-card); border: 1px solid var(--accent); padding: 30px; border-radius: 8px; max-width: 900px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="sidebar">
+            <h2 style="color: var(--accent);">PIMS 13V2</h2>
+            <p style="color: var(--text-dim);">V6.1 PRODUCTION</p>
+            <hr style="border: 0.5px solid var(--border-color); margin: 20px 0;">
+            <button class="btn" style="width: 100%;" onclick="openAudit()">📊 AUDIT LOG</button>
+            <button class="btn" style="width: 100%; margin-top: 10px;" onclick="openKPI()">📈 KPI DASHBOARD</button>
+            <button class="btn" style="width: 100%; margin-top: 40px; border-color: #ff4d4d; color: #ff4d4d;" onclick="logout()">🔓 ĐĂNG XUẤT</button>
+        </div>
+        <div class="main-content">
+            <div class="card">
+                <h3>Live Terminal Transactions</h3>
+                <table class="audit-table" id="liveTable">
+                    <thead><tr><th>Thời gian</th><th>Sự kiện</th><th>Container</th><th>Vị trí</th></tr></thead>
+                    <tbody id="liveBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audit Modal -->
+    <div id="auditModal" class="modal">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Audit Traceability Log</h2>
+                <button class="btn btn-export" onclick="exportExcel()">XUẤT EXCEL (V6.1)</button>
+            </div>
+            <table class="audit-table">
+                <thead><tr><th>ID</th><th>Sự kiện</th><th>Container</th><th>Thời gian</th><th>Đối tác</th></tr></thead>
+                <tbody id="auditTableBody"></tbody>
+            </table>
+            <br><button class="btn" onclick="closeModal('auditModal')">Đóng</button>
+        </div>
+    </div>
+
+    <!-- KPI Modal -->
+    <div id="kpiModal" class="modal">
+        <div class="modal-content">
+            <h2>Hoạt động tại bãi (Yard Heatmap)</h2>
+            <div class="stats-grid">
+                <div class="stat-card"><div>Current Occupancy</div><div class="stat-val" id="occVal">0%</div></div>
+                <div class="stat-card"><div>Gate Thruput (H)</div><div class="stat-val">12</div></div>
+                <div class="stat-card"><div>Re-shuffle Rate</div><div class="stat-val">1.2%</div></div>
+                <div class="stat-card"><div>Avg. TAT</div><div class="stat-val">18m</div></div>
+            </div>
+            <div class="heatmap-grid" id="heatmapGrid"></div>
+            <br><button class="btn" onclick="closeModal('kpiModal')">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Block Detail Modal -->
+    <div id="blockModal" class="modal" style="z-index: 1001;">
+        <div class="modal-content">
+            <h2 id="blockTitle">Block Details</h2>
+            <table class="audit-table">
+                <thead><tr><th>Slot</th><th>Container ID</th><th>Vessel</th><th>Weight</th><th>Status</th></tr></thead>
+                <tbody id="blockTableBody"></tbody>
+            </table>
+            <br><button class="btn" onclick="closeModal('blockModal')">Quay lại Heatmap</button>
+        </div>
+    </div>
+
+    <script>
+        // GOLD EDITION: Session Security Check
+        (function() {
+            const session = JSON.parse(localStorage.getItem('pims_session'));
+            const token = localStorage.getItem('pims_token');
+            if (!session || !token || session.role !== 'ADMIN') {
+                window.location.href = 'login.html';
+            }
+        })();
+
+        function logout() {
+            localStorage.removeItem('pims_session');
+            localStorage.removeItem('pims_token');
+            window.location.href = 'login.html';
+        }
+
+        const API_BASE = window.location.origin + "/api";
+        const WS_URL = window.location.protocol === "https:" ? "wss://" + window.location.host : "ws://" + window.location.host;
+
+        async function fetchAudit() {
+            const res = await fetch(`${API_BASE}/audit`);
+            const data = await res.json();
+            renderAudit(data.auditLog);
+        }
+
+        function renderAudit(logs) {
+            const body = document.getElementById('auditTableBody');
+            body.innerHTML = logs.map(l => `
+                <tr>
+                    <td>${l.id}</td>
+                    <td><b>${l.kind}</b></td>
+                    <td>${l.containerId}</td>
+                    <td>${new Date(l.at).toLocaleString()}</td>
+                    <td>${l.by}</td>
+                </tr>
+            `).join('');
+            
+            // Live table sync
+            document.getElementById('liveBody').innerHTML = logs.slice(0, 5).map(l => `
+                <tr>
+                    <td>${new Date(l.at).toLocaleTimeString()}</td>
+                    <td>${l.kind}</td>
+                    <td>${l.containerId}</td>
+                    <td>${l.position || 'GATE'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function exportExcel() {
+            const table = document.getElementById("auditTableBody");
+            const data = [];
+            const header = ["ID", "Sự kiện", "Container", "Thời gian", "Người thực hiện"];
+            data.push(header);
+            
+            Array.from(table.rows).forEach(row => {
+                const rowData = Array.from(row.cells).map(cell => cell.innerText);
+                data.push(rowData);
+            });
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, "Audit Log");
+            XLSX.writeFile(wb, `PIMS_Audit_Report_${new Date().getTime()}.xlsx`);
+        }
+
+        async function openKPI() {
+            document.getElementById('kpiModal').style.display = 'flex';
+            renderHeatmap();
+        }
+
+        function renderHeatmap() {
+            const grid = document.getElementById('heatmapGrid');
+            const blocks = ['A', 'B', 'C', 'D'];
+            grid.innerHTML = blocks.map(b => `
+                <div class="heatmap-box" style="background: rgba(100, 255, 218, 0.2);" onclick="drillDown('${b}')">
+                    <span style="font-size: 20px; font-weight: bold;">BLOCK ${b}</span>
+                    <span style="font-size: 12px; color: var(--accent);">VIEW DETAIL</span>
+                </div>
+            `).join('');
+        }
+
+        async function drillDown(blockId) {
+            const res = await fetch(`${API_BASE}/yard/block/${blockId}`);
+            const data = await res.json();
+            
+            document.getElementById('blockTitle').innerText = `Dữ liệu chi tiết: ${data.block.name}`;
+            const body = document.getElementById('blockTableBody');
+            body.innerHTML = data.block.items.length ? data.block.items.map(i => `
+                <tr>
+                    <td>${i.key}</td>
+                    <td>${i.containerId}</td>
+                    <td>MSC ALINA</td>
+                    <td>25 Tons</td>
+                    <td><span style="color: #64ffda">READY</span></td>
+                </tr>
+            `).join('') : '<tr><td colspan="5" style="text-align: center">No containers in this block</td></tr>';
+            
+            document.getElementById('blockModal').style.display = 'flex';
+        }
+
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function openAudit() { document.getElementById('auditModal').style.display = 'flex'; fetchAudit(); }
+
+        setInterval(fetchAudit, 5000);
+        fetchAudit();
+    </script>
+</body>
+</html>

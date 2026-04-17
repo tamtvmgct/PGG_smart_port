@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GNT — Terminal Yard Operations</title>
+    <style>
+        :root {
+            --primary: #0a192f;
+            --accent: #64ffda;
+            --bg-card: #112240;
+            --text-main: #ccd6f6;
+            --border: #233554;
+        }
+        body { background: var(--primary); color: var(--text-main); font-family: sans-serif; padding: 20px; }
+        .gnt-container { max-width: 500px; margin: 0 auto; }
+        .job-card { background: var(--bg-card); border: 1px solid var(--border); padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .btn { background: var(--accent); color: var(--primary); border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="gnt-container">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="color: var(--accent);">GNT — YARD JOBS</h2>
+            <button class="btn" style="background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; padding: 5px 10px; font-size: 12px;" onclick="logout()">LOGOUT</button>
+        </div>
+        <div id="jobList"></div>
+    </div>
+
+    <script>
+        // GOLD EDITION: Session Security Check
+        (function() {
+            const session = JSON.parse(localStorage.getItem('pims_session'));
+            const token = localStorage.getItem('pims_token');
+            if (!session || !token || (session.role !== 'GNT' && session.role !== 'ADMIN')) {
+                window.location.href = 'login.html';
+            }
+        })();
+
+        function logout() {
+            localStorage.removeItem('pims_session');
+            localStorage.removeItem('pims_token');
+            window.location.href = 'login.html';
+        }
+
+        const API_BASE = window.location.origin + "/api";
+        const WS_URL = window.location.protocol === "https:" ? "wss://" + window.location.host : "ws://" + window.location.host;
+
+        async function fetchJobs() {
+            const res = await fetch(`${API_BASE}/containers`);
+            const data = await res.json();
+            const pending = data.containers.filter(c => c.status === 'REGISTERED');
+            
+            document.getElementById('jobList').innerHTML = pending.map(c => `
+                <div class="job-card">
+                    <h3>Container: ${c.containerId}</h3>
+                    <p>Truck: ${c.truckPlate}</p>
+                    <p>Type: ${c.operationType}</p>
+                    <button class="btn" onclick="assignYard('${c.containerId}')">XÁC NHẬN VỊ TRÍ (V6.1)</button>
+                </div>
+            `).join('') || '<p>Không có lệnh chờ...</p>';
+        }
+
+        async function assignYard(id) {
+            const res = await fetch(`${API_BASE}/yard/assign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ containerId: id })
+            });
+            const data = await res.json();
+            if(data.ok) {
+                alert(`Đã gán vị trí: ${data.position.key}`);
+                fetchJobs();
+            }
+        }
+
+        setInterval(fetchJobs, 5000);
+        fetchJobs();
+    </script>
+</body>
+</html>
